@@ -43,6 +43,7 @@ static uint16_t u_4msTask_Counter;
 
 static bool waitFlag;
 static bool waitFlag_old;
+static int8_t touch_counter;
 
 inline void StateSet( int8_t a) {
     trunState[1] = trunState[0];
@@ -62,7 +63,7 @@ MotorParts*     pC_motorParts;
 ColorParts*     pC_colorParts;
 SonarParts*     pC_sonarParts;
 TouchParts*     pC_touchParts;
-Logging*        pC_logging;
+Logging*        pC_logging; 
 lcdDraw*        pC_lcdDraw;
 ClockTimer*     pC_clockTimer;
 
@@ -128,6 +129,7 @@ static void InitializeFunc(void) {
     u_4msTask_Counter = 0;
     waitFlag = true;
     waitFlag_old = waitFlag;
+    touch_counter = 0;
 
     /* LCD画面表示 */
     pC_lcdDraw->LCD_INIT();
@@ -201,33 +203,40 @@ static void FinalizeFunc(void){
 //*****************************************************************************
 void periodic_4mstask(intptr_t unused) {
     int8_t tail_mode = -1;
+    int8_t main_mode = -1;
     
     tail_mode = TAIL_DRIVE;
+    main_mode = INVALID;
 
-#if 0 // ここはまだ整備中　きれいになり次第、最終的にはこっちを使う
+#if 1 // ここはまだ整備中　きれいになり次第、最終的にはこっちを使う
     /* タッチセンサが押された */
-    if (pC_touchParts->GetTouchPartsData())
+    if (pC_touchParts->GetTouchPartsFillter())
     {
+        touch_counter++;
+    }
+    if(touch_counter >= 250){
         waitFlag = !waitFlag;   //反転する
+        touch_counter = 0;
     }
     //待機処理
     if(waitFlag == true){
-#if 0
         //待機後の初回動作
+        main_mode = WAITTING;
         if(waitFlag != waitFlag_old){
+            main_mode = WAITTING_INIT;
             pC_lcdDraw->LCD_DRAW((char*)"Waitting...");
             ev3_led_set_color(LED_ORANGE); /* 待機通知 */
             pC_lcdDraw->LCD_DRAW((char*)"Start wait");
             tail_mode = TAIL_STAND_UP; /* 完全停止用角度に制御 */
         }
         /* 待機中 */
-#endif
 
     //待機解除
     }else{
+        main_mode = NORMAL;
         //待機解除後の初回動作
         if(waitFlag != waitFlag_old){
-#if 0
+            main_mode = NORMAL_INIT;
             pC_lcdDraw->LCD_DRAW((char*)"Start!");
             /* 走行モーターエンコーダーリセット */
             pC_motorParts->MotorPartsReset(MOTORPARTS_RIGHT_BIT&MOTORPARTS_TAIL_BIT);
@@ -238,31 +247,33 @@ void periodic_4mstask(intptr_t unused) {
             
         //    pC_clockTimer->sleep(1000);
             tail_mode = TAIL_DRIVE;   /* バランス走行用角度に制御 */
-
             ev3_led_set_color(LED_GREEN); /* スタート通知 */
-#endif
 
         }
 
-#if 0
+    }
 
-        /*  4msタスク  */
-        pC_colorParts->ColorPartsTask();
-
-        controller_temp();
-
-        
-        /*  40msタスク  */
-        if((u_4msTask_Counter%10) == 0){
-            //ソナーセンサパーツフィルタリング用処理
-            pC_sonarParts->SonarPartsTask();    //40ms間隔で呼び出す
-        }
-#endif
-        
+    /*  4msタスク  */
+    pC_colorParts->ColorPartsTask();
+    if(main_mode == NORMAL){
+        //controller_temp();
+    }
+    /*  20msタスク  */
+    if((u_4msTask_Counter%5) == 0){
+        pC_motorParts->setMotorPartsTail(tail_mode); /* テール角度制御 */
+    }
+    /*  40msタスク  */
+    if((u_4msTask_Counter%10) == 0){
+        //ソナーセンサパーツフィルタリング用処理
+        pC_sonarParts->SonarPartsTask();    //40ms間隔で呼び出す
+    }
+    /*  100msタスク  */
+    if((u_4msTask_Counter%25) == 0){
+        pC_touchParts->TouchPartsTask();
     }
 #endif
 
-
+#if 0
     /*  4msタスク  */
     //カラーセンサパーツフィルタリング用処理
     pC_colorParts->ColorPartsTask();
@@ -285,6 +296,37 @@ void periodic_4mstask(intptr_t unused) {
         pC_touchParts->TouchPartsTask();
     }
 
+#endif
+
+#if 1 //モニタリング用
+int i = 5;
+int32_t lcd_data = 0;
+//pC_lcdDraw->LCD_DRAW_DATA_INT32((char*)"motor_ang_l", (int32_t)pC_motorParts->getMotorPartsPwm(MOTORPARTS_LEFT_NO), i);
+//pC_lcdDraw->LCD_DRAW_DATA_INT32((char*)"motor_ang_r", (int32_t)pC_motorParts->getMotorPartsPwm(MOTORPARTS_RIGHT_NO), i++);
+//pC_lcdDraw->LCD_DRAW_DATA_INT32((char*)"gyro", (int32_t)pC_gyroParts->GetGyroPartsData(), i++);
+//pC_lcdDraw->LCD_DRAW_DATA_INT32((char*)"volt", (int32_t)ev3_battery_voltage_mV(), i++);
+
+lcd_data=0;
+lcd_data=pC_colorParts->GetColorPartsFillter();
+pC_lcdDraw->LCD_DRAW_DATA_INT32((char*)"ColorFill", (int32_t)lcd_data, i++);
+
+lcd_data=0;
+lcd_data=pC_colorParts->GetLineDetection();
+pC_lcdDraw->LCD_DRAW_DATA_INT32((char*)"Detection", (int32_t)lcd_data, i++);
+
+lcd_data=0;
+lcd_data=pC_sonarParts->GetSonarPartsFillter();
+pC_lcdDraw->LCD_DRAW_DATA_INT32((char*)"SonarFill", (int32_t)lcd_data, i++);
+
+lcd_data=0;
+lcd_data=pC_sonarParts->GetObstacleDetection();
+pC_lcdDraw->LCD_DRAW_DATA_INT32((char*)"Obstacle", (int32_t)lcd_data, i++);
+
+lcd_data=0;
+lcd_data=pC_touchParts->GetTouchPartsFillter();
+pC_lcdDraw->LCD_DRAW_DATA_INT32((char*)"TouchFill", (int32_t)lcd_data, i++);
+
+#endif
 
     waitFlag_old = waitFlag;
 

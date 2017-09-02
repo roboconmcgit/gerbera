@@ -24,5 +24,14 @@
 #define LINETRACE_BRIGHTNESS    30
 #define LEFTRUN_MAX         3
 
+/* Mainモード */
+enum{
+    INVALID = 0,
+    WAITTING_INIT,
+    WAITTING,
+    NORMAL_INIT,
+    NORMAL
+};
+
 #endif // !PARAM_SETTING_H_
 
